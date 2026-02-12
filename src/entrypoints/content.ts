@@ -1,3 +1,6 @@
+import { sites, getSiteConfig } from "@/features/sites";
+import { SiteConfig } from "@/features/sites/types";
+
 export default defineContentScript({
   matches: [
     "*://*.youtube.com/*",
@@ -10,126 +13,117 @@ export default defineContentScript({
   ],
   main() {
     const STYLE_ID = "feed-filter-style";
-    let currentBlockedSites: Record<string, boolean> = {};
 
-    const SITE_SELECTORS: Record<string, string[]> = {
-      youtube: [
-        "#primary",
-        'ytd-browse[page-subtype="home"]',
-        "ytd-rich-grid-renderer",
-      ],
-      twitter: [
-        '[data-testid="primaryColumn"] section > div[aria-label*="Timeline"]',
-        '[data-testid="primaryColumn"] > div > div > div > div > div > div > div[aria-label*="Timeline"]', // Fallback
-      ],
-      x: [
-        '[data-testid="primaryColumn"] section > div[aria-label*="Timeline"]',
-      ],
-      facebook: [
-        '[role="feed"]',
-        "#ssrb_feed_start + div",
-        ".x1hc1fzr.x1unhpq9.x6o7n8i",
-      ],
-      instagram: [
-        // Target individual posts to avoid breaking layout containers or loading states
-        "main[role='main'] article",
-        // Hide loading indicators/spinners to avoid "stuck" loading state
-        "svg[aria-label='Loading...']",
-        "div[role='progressbar']",
-        // Hide skeleton loaders (often gray divs in feed)
-        "div[style*='background-color: rgb(239, 239, 239)']", // Common skeleton color
-        "div._aayat", // Skeleton class (might change)
-      ],
-      linkedin: [
-        ".scaffold-layout__main",
-        ".feed-shared-update-v2",
-        "div.scaffold-finite-scroll",
-      ],
-      reddit: ["#main-content", "shreddit-feed", ".feed-container"],
-    };
-
-    function getSelectorsForCurrentSite(): string[] {
-      const hostname = window.location.hostname;
-      if (hostname.includes("youtube")) return SITE_SELECTORS.youtube;
-      if (hostname.includes("twitter") || hostname.includes("x.com"))
-        return [...SITE_SELECTORS.twitter, ...SITE_SELECTORS.x];
-      if (hostname.includes("facebook")) return SITE_SELECTORS.facebook;
-      if (hostname.includes("instagram")) return SITE_SELECTORS.instagram;
-      if (hostname.includes("linkedin")) return SITE_SELECTORS.linkedin;
-      if (hostname.includes("reddit")) return SITE_SELECTORS.reddit;
-      return [];
+    // Re-define Settings interface based on new structure if needed,
+    // or import from a shared types file if we had one.
+    // For now, mirroring the logic.
+    interface SiteSettings {
+      blockFeed: boolean;
+      [key: string]: boolean;
+    }
+    interface Settings {
+      [siteId: string]: SiteSettings;
     }
 
-    function shouldBlockCurrentSite(): boolean {
-      const hostname = window.location.hostname;
-      if (hostname.includes("youtube") && currentBlockedSites.youtube)
-        return true;
-      if (
-        (hostname.includes("twitter") || hostname.includes("x.com")) &&
-        currentBlockedSites.twitter
-      )
-        return true;
-      if (hostname.includes("facebook") && currentBlockedSites.facebook)
-        return true;
-      if (hostname.includes("instagram") && currentBlockedSites.instagram)
-        return true;
-      if (hostname.includes("linkedin") && currentBlockedSites.linkedin)
-        return true;
-      if (hostname.includes("reddit") && currentBlockedSites.reddit)
-        return true;
-      return false;
+    let currentSettings: Settings = {};
+    let activeSite: SiteConfig | undefined;
+
+    function getActiveSite(): SiteConfig | undefined {
+      return getSiteConfig(window.location.hostname);
+    }
+
+    function shouldBlockFeature(feature: string): boolean {
+      if (!activeSite) return false;
+      const siteSettings = currentSettings[activeSite.id];
+      // If no settings exist for this site, use default
+      if (!siteSettings) return activeSite.defaultSettings[feature] || false;
+
+      return siteSettings[feature] === true;
     }
 
     function applyBlocking() {
+      activeSite = getActiveSite();
+      if (!activeSite) return;
+
       const existingStyle = document.getElementById(STYLE_ID);
-      const shouldBlock = shouldBlockCurrentSite();
 
-      if (shouldBlock) {
-        if (!existingStyle) {
-          const selectors = getSelectorsForCurrentSite();
-          if (selectors.length === 0) return;
+      const shouldBlockFeed = shouldBlockFeature("blockFeed");
 
-          const css = selectors
-            .map((s) => `${s} { display: none !important; }`)
-            .join("\n");
+      // Future: check other features like 'blockShorts'
+
+      let cssRules: string[] = [];
+
+      if (shouldBlockFeed) {
+        if (activeSite.cssSelectors.feed) {
+          cssRules.push(
+            ...activeSite.cssSelectors.feed.map(
+              (s) => `${s} { display: none !important; }`,
+            ),
+          );
+        }
+      }
+
+      if (cssRules.length > 0) {
+        const css = cssRules.join("\n");
+        if (existingStyle) {
+          existingStyle.textContent = css;
+        } else {
           const style = document.createElement("style");
           style.id = STYLE_ID;
           style.textContent = css;
           document.head.appendChild(style);
-          console.log("FeedFilter: Blocking enabled");
         }
+        console.log(`FeedFilter: Blocking enabled for ${activeSite.name}`);
       } else {
         if (existingStyle) {
           existingStyle.remove();
-          console.log("FeedFilter: Blocking disabled");
+          console.log(`FeedFilter: Blocking disabled for ${activeSite.name}`);
         }
       }
     }
 
     // Initial load
-    browser.storage.local.get("blockedSites").then((res) => {
-      if (res.blockedSites) {
-        currentBlockedSites = res.blockedSites as Record<string, boolean>;
+    browser.storage.local.get("siteSettings").then((res) => {
+      if (res.siteSettings) {
+        currentSettings = res.siteSettings as Settings;
         applyBlocking();
+      } else {
+        // Legacy migration check could stay or be removed if assumed done
+        browser.storage.local.get("blockedSites").then((oldRes) => {
+          if (oldRes.blockedSites) {
+            const oldBlocked = oldRes.blockedSites as Record<string, boolean>;
+            const newSettings: Settings = {};
+            sites.forEach((site) => {
+              newSettings[site.id] = { blockFeed: !!oldBlocked[site.id] };
+            });
+            currentSettings = newSettings;
+            applyBlocking();
+          }
+        });
       }
     });
 
     // Listen for changes
     browser.storage.onChanged.addListener((changes) => {
-      if (changes.blockedSites) {
-        currentBlockedSites = changes.blockedSites.newValue as Record<
-          string,
-          boolean
-        >;
+      if (changes.siteSettings) {
+        currentSettings = changes.siteSettings.newValue as Settings;
         applyBlocking();
       }
     });
 
-    // Watch for DOM changes to ensure style persists (some SPAs might clear head)
+    // Watch for DOM changes
     const observer = new MutationObserver(() => {
-      // Light check: only re-apply if we should be blocking and the style is gone
-      if (shouldBlockCurrentSite() && !document.getElementById(STYLE_ID)) {
-        applyBlocking();
+      // Re-apply if style is missing but should be there
+      // This check is slightly less efficient than before but more generic
+      // We can optimize if needed by storing the expected state
+      const styleExists = !!document.getElementById(STYLE_ID);
+      // We re-calculate "should block" - mostly cheap
+      activeSite = getActiveSite();
+      if (activeSite) {
+        const shouldBlock = shouldBlockFeature("blockFeed");
+        if (shouldBlock && !styleExists) {
+          applyBlocking();
+        }
       }
     });
 

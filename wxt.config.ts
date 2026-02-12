@@ -13,6 +13,10 @@ export default defineConfig({
       "*://*.linkedin.com/*",
       "*://*.reddit.com/*",
     ],
+    options_ui: {
+      page: "options.html",
+      open_in_tab: true,
+    },
   },
   modules: ["@wxt-dev/module-react"],
   srcDir: "src",

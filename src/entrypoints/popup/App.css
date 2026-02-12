@@ -1,9 +1,9 @@
 body {
-  width: 300px;
+  width: 320px; /* Slightly wider for header */
   margin: 0;
   padding: 16px;
   background-color: #f9f9f9;
-  font-family: "Inter", sans-serif;
+  font-family: 'Inter', sans-serif;
   color: #333;
 }
 
@@ -13,11 +13,35 @@ body {
   gap: 16px;
 }
 
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 h1 {
   font-size: 1.25rem;
   font-weight: 600;
   margin: 0;
   color: #111;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn:hover {
+  background-color: #eee;
+  color: #333;
 }
 
 .description {
@@ -76,7 +100,7 @@ label {
   right: 0;
   bottom: 0;
   background-color: #ccc;
-  transition: 0.4s;
+  transition: .4s;
   border-radius: 34px;
 }
 
@@ -88,16 +112,16 @@ label {
   left: 3px;
   bottom: 3px;
   background-color: white;
-  transition: 0.4s;
+  transition: .4s;
   border-radius: 50%;
 }
 
 input:checked + .slider {
-  background-color: #2196f3;
+  background-color: #2196F3;
 }
 
 input:focus + .slider {
-  box-shadow: 0 0 1px #2196f3;
+  box-shadow: 0 0 1px #2196F3;
 }
 
 input:checked + .slider:before {
